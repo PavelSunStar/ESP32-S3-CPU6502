@@ -37,9 +37,12 @@ The sketch prints checkpoints every 100 instructions and should end with `PASS: 
 
 Our emulator implementation and the Arduino verification sketch are released under the **MIT License** (see [LICENSE](LICENSE)).
 
-The `nestest` test ROM and reference log are by **Kevin Horton (kevtris)** and are distributed here as third-party public-domain emulator test fixtures. They are not claimed as original project code.
+The `nestest` CPU test ROM and reference log are attributed to **Kevin Horton (kevtris)** by the [NESdev Wiki's Emulator tests page](https://www.nesdev.org/wiki/Emulator_tests). This is the source used to find the test during development. The test ROM and trace are third-party fixtures, not original code authored for this project. Their redistribution terms are separate from the MIT license for the emulator source.
 
-Original fixtures: [christopherpow/nes-test-roms — other](https://github.com/christopherpow/nes-test-roms/tree/master/other)
+- **Documentation and test index (primary reference):** [NESdev Wiki — Emulator tests](https://www.nesdev.org/wiki/Emulator_tests)
+- **Archival mirror of the test files:** [christopherpow/nes-test-roms — other](https://github.com/christopherpow/nes-test-roms/tree/master/other)
+
+NESdev explicitly notes that many old download links are broken and points to that archive.
 
 ## Current limitations
 
