@@ -29,6 +29,8 @@ class CPU6502 {
         void connectBus(Bus* bus) { _bus = bus; }
         void reset();
         void clock();
+        void setIRQLine(bool level) { _irqLine = level; }
+        void requestNMI() { _nmiPending = true; }
         bool complete()                 const { return _cycles == 0; }
         bool halted()                   const { return _halted; }
         uint8_t opcode()                const { return _opcode; }
@@ -46,6 +48,11 @@ class CPU6502 {
         uint16_t    _addr_rel = 0;
         uint8_t     _fetched = 0;
         bool        _halted = false;
+        bool        _irqLine = false;
+        bool        _nmiPending = false;
+        void enterInterrupt(uint16_t vector);
+        bool        _dummyReadPending = false;
+        uint16_t    _dummyReadAddress = 0;
 
         uint8_t read(uint16_t address);
         void write(uint16_t address, uint8_t value);
