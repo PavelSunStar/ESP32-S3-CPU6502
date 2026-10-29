@@ -2,11 +2,10 @@
 
 #include <Arduino.h>
 
-// nestest.nes: complete iNES ROM in ESP32-S3 flash.
-// Original test ROM by Kevin Horton (kevtris), public-domain test fixture.
-// Source: https://github.com/christopherpow/nes-test-roms/tree/master/other
+// nestest.nes: complete iNES ROM stored in ESP32-S3 flash.
 // iNES header (16 bytes) + PRG ROM (16 KB) + CHR ROM (8 KB).
 // Mapper 0 (NROM). No SD card required.
+// Pass nestest_rom and nestest_rom_size to the ROM loader.
 
 static const uint8_t nestest_rom[] = {
     0x4E, 0x45, 0x53, 0x1A, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
