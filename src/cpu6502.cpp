@@ -28,18 +28,45 @@ void CPU6502::reset() {
     _cycles = 8;
     _totalCycles = 0;
     _halted = false;
+    _dummyReadPending = false;
+    _dummyReadAddress = 0;
+    _irqLine = false;
+    _nmiPending = false;
+}
+
+void CPU6502::enterInterrupt(uint16_t vector) {
+    // Instruction-boundary approximation, not individual bus-cycle accuracy.
+    read(_reg.PC);  // discarded prefetch (simplified)
+    write(0x0100 | _reg.SP--, uint8_t(_reg.PC >> 8));
+    write(0x0100 | _reg.SP--, uint8_t(_reg.PC));
+    write(0x0100 | _reg.SP--, uint8_t((_reg.SR.reg | 0x20) & ~0x10));
+    _reg.SR.I = 1;
+    _reg.SR.B = 0;
+    _reg.SR.U = 1;
+    uint8_t lo = read(vector);
+    uint8_t hi = read(uint16_t(vector + 1));
+    _reg.PC = uint16_t(lo) | (uint16_t(hi) << 8);
+    _cycles = 7;
 }
 
 void CPU6502::clock() {
     if (_halted || !_bus) return;
     if (_cycles == 0) {
-        _opcode = read(_reg.PC++);
-        const Instruction& instr = instructions[_opcode];
-        _cycles = instr.cycles;
-        uint8_t extra1 = (this->*instr.addressMode)();
-        uint8_t extra2 = (this->*instr.execute)();
-        _cycles += extra1 & extra2;
-        _reg.SR.U = 1;
+        if (_nmiPending) {
+            _nmiPending = false;
+            enterInterrupt(0xFFFA);
+        } else if (_irqLine && !_reg.SR.I) {
+            enterInterrupt(0xFFFE);
+        } else {
+            _opcode = read(_reg.PC++);
+            const Instruction& instr = instructions[_opcode];
+            _cycles = instr.cycles;
+            uint8_t extra1 = (this->*instr.addressMode)();
+            uint8_t extra2 = (this->*instr.execute)();
+            _dummyReadPending = false;
+            _cycles += extra1 & extra2;
+            _reg.SR.U = 1;
+        }
     }
     --_cycles;
     ++_totalCycles;
@@ -86,7 +113,11 @@ uint8_t CPU6502::ABX() {
     uint16_t hi = read(_reg.PC++);
     uint16_t base = (hi << 8) | lo;
     _addr_abs = uint16_t(base + _reg.X);
-    return (base & 0xFF00) != (_addr_abs & 0xFF00);
+    // A page crossing produces a read from the uncorrected address
+    // before the final read (for memory-reading instructions).
+    _dummyReadPending = (base & 0xFF00) != (_addr_abs & 0xFF00);
+    _dummyReadAddress = (base & 0xFF00) | (_addr_abs & 0x00FF);
+    return _dummyReadPending;
 }
 
 uint8_t CPU6502::ABY() {
@@ -94,7 +125,11 @@ uint8_t CPU6502::ABY() {
     uint16_t hi = read(_reg.PC++);
     uint16_t base = (hi << 8) | lo;
     _addr_abs = uint16_t(base + _reg.Y);
-    return (base & 0xFF00) != (_addr_abs & 0xFF00);
+    // A page crossing produces a read from the uncorrected address
+    // before the final read (for memory-reading instructions).
+    _dummyReadPending = (base & 0xFF00) != (_addr_abs & 0xFF00);
+    _dummyReadAddress = (base & 0xFF00) | (_addr_abs & 0x00FF);
+    return _dummyReadPending;
 }
 
 uint8_t CPU6502::REL() {
@@ -128,10 +163,21 @@ uint8_t CPU6502::IDY() {
     uint16_t hi = read(uint8_t(pointer + 1));
     uint16_t base = (hi << 8) | lo;
     _addr_abs = uint16_t(base + _reg.Y);
-    return (base & 0xFF00) != (_addr_abs & 0xFF00);
+    // A page crossing produces a read from the uncorrected address
+    // before the final read (for memory-reading instructions).
+    _dummyReadPending = (base & 0xFF00) != (_addr_abs & 0xFF00);
+    _dummyReadAddress = (base & 0xFF00) | (_addr_abs & 0x00FF);
+    return _dummyReadPending;
 }
 
-uint8_t CPU6502::fetch() { _fetched = read(_addr_abs); return _fetched; }
+uint8_t CPU6502::fetch() {
+    if (_dummyReadPending) {
+        read(_dummyReadAddress);
+        _dummyReadPending = false;
+    }
+    _fetched = read(_addr_abs);
+    return _fetched;
+}
 uint8_t CPU6502::Instr_LDA() { _reg.A = fetch(); setZN(_reg.A); return 1; }
 uint8_t CPU6502::Instr_LDX() { _reg.X = fetch(); setZN(_reg.X); return 1; }
 uint8_t CPU6502::Instr_LDY() { _reg.Y = fetch(); setZN(_reg.Y); return 1; }
@@ -176,6 +222,9 @@ uint8_t CPU6502::Instr_SLO() {
 
     uint8_t value = fetch();
 
+    // NMOS 6502 RMW: dummy write of the original byte.
+    write(_addr_abs, value);
+
     // Старший бит уходит в Carry
     _reg.SR.C = (value & 0x80) != 0;
 
@@ -197,6 +246,9 @@ uint8_t CPU6502::Instr_SLO() {
 uint8_t CPU6502::Instr_RLA() {
 
     uint8_t value = fetch();
+
+    // NMOS 6502 RMW: dummy write of the original byte.
+    write(_addr_abs, value);
 
     // Запоминаем старый Carry
     uint8_t oldCarry = _reg.SR.C;
@@ -223,6 +275,9 @@ uint8_t CPU6502::Instr_SRE() {
 
     uint8_t value = fetch();
 
+    // NMOS 6502 RMW: dummy write of the original byte.
+    write(_addr_abs, value);
+
     // Младший бит переходит в Carry
     _reg.SR.C = value & 0x01;
 
@@ -244,6 +299,9 @@ uint8_t CPU6502::Instr_SRE() {
 uint8_t CPU6502::Instr_RRA() {
 
     uint8_t value = fetch();
+
+    // NMOS 6502 RMW: dummy write of the original byte.
+    write(_addr_abs, value);
 
     // Запоминаем старый Carry
     uint8_t oldCarry = _reg.SR.C;
@@ -310,6 +368,9 @@ uint8_t CPU6502::Instr_DCP() {
     // Читаем значение памяти
     uint8_t value = fetch();
 
+    // NMOS 6502 RMW: dummy write of the original byte.
+    write(_addr_abs, value);
+
     // Уменьшаем на единицу
     value--;
 
@@ -331,6 +392,9 @@ uint8_t CPU6502::Instr_ISC() {
 
     // Читаем значение памяти
     uint8_t value = fetch();
+
+    // NMOS 6502 RMW: dummy write of the original byte.
+    write(_addr_abs, value);
 
     // INC: увеличиваем на единицу
     value++;
@@ -529,6 +593,9 @@ uint8_t CPU6502::Instr_ASL() {
 
     uint8_t value = accumulator ? _reg.A : fetch();
 
+    // Only memory variants perform the original-value dummy write.
+    if (!accumulator) write(_addr_abs, value);
+
     _reg.SR.C = (value & 0x80) != 0;
 
     uint8_t result = uint8_t(value << 1);
@@ -558,6 +625,9 @@ uint8_t CPU6502::Instr_LSR() {
     bool accumulator = (_opcode == 0x4A);
 
     uint8_t value = accumulator ? _reg.A : fetch();
+
+    // Only memory variants perform the original-value dummy write.
+    if (!accumulator) write(_addr_abs, value);
 
     _reg.SR.C = value & 1;
 
@@ -644,6 +714,9 @@ uint8_t CPU6502::Instr_BEQ() {
 
 uint8_t CPU6502::Instr_DEC() {
     uint8_t value = fetch();
+
+    // NMOS 6502 RMW: dummy write of the original byte.
+    write(_addr_abs, value);
 
     --value;
 
@@ -774,6 +847,9 @@ uint8_t CPU6502::Instr_BPL() {
 uint8_t CPU6502::Instr_INC() {
     uint8_t value = fetch();
 
+    // NMOS 6502 RMW: dummy write of the original byte.
+    write(_addr_abs, value);
+
     ++value;
 
     write(_addr_abs, value);
@@ -786,6 +862,9 @@ uint8_t CPU6502::Instr_ROL() {
     bool accumulator = (_opcode == 0x2A);
 
     uint8_t value = accumulator ? _reg.A : fetch();
+
+    // Only memory variants perform the original-value dummy write.
+    if (!accumulator) write(_addr_abs, value);
 
     uint8_t oldCarry = _reg.SR.C;
 
@@ -837,6 +916,9 @@ uint8_t CPU6502::Instr_ROR() {
     bool accumulator = (_opcode == 0x6A);
 
     uint8_t value = accumulator ? _reg.A : fetch();
+
+    // Only memory variants perform the original-value dummy write.
+    if (!accumulator) write(_addr_abs, value);
 
     uint8_t oldCarry = _reg.SR.C;
 
