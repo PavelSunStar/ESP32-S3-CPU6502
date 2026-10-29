@@ -4,9 +4,6 @@
 #include <stddef.h>
 #include <pgmspace.h>
 
-// Derived from the first 5000 reference states of nestest.log.
-// Original nestest test: Kevin Horton (kevtris).
-// Source: https://github.com/christopherpow/nes-test-roms/tree/master/other
 struct ExpectedState {
     uint16_t pc;
     uint8_t op, a, x, y, p, sp;
