@@ -75,7 +75,12 @@ class CPU6502 {
         uint8_t Instr_BVC(); uint8_t Instr_INY(); uint8_t Instr_RTI(); uint8_t Instr_CLD();
         uint8_t Instr_BVS(); uint8_t Instr_JMP(); uint8_t Instr_RTS(); uint8_t Instr_LDA();
         uint8_t Instr_CLC(); uint8_t Instr_JSR(); uint8_t Instr_SBC(); uint8_t Instr_SEC();
-        uint8_t Instr_XXX();
+        uint8_t Instr_XXX(); 
+
+        uint8_t Instr_SLO(); uint8_t Instr_RLA(); uint8_t Instr_SRE(); uint8_t Instr_RRA();
+        uint8_t Instr_SAX(); uint8_t Instr_LAX(); uint8_t Instr_ANC(); uint8_t Instr_DCP(); 
+        uint8_t Instr_ISC(); uint8_t Instr_ALR(); uint8_t Instr_ARR(); uint8_t Instr_SHY();
+        uint8_t Instr_LXA(); uint8_t Instr_AXS(); uint8_t Instr_SHX();
 
         struct Instruction {
             const char* name;
